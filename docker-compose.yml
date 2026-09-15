@@ -1,0 +1,15 @@
+services:
+  pulsar:
+    image: apachepulsar/pulsar:4.2.4
+    command: ["bin/pulsar", "standalone"]
+    ports:
+      - "6650:6650"
+      - "8080:8080"
+    environment:
+      PULSAR_MEM: "-Xms512m -Xmx512m -XX:MaxDirectMemorySize=512m"
+    healthcheck:
+      test: ["CMD-SHELL", "bin/pulsar-admin clusters list >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 24
+      start_period: 20s
