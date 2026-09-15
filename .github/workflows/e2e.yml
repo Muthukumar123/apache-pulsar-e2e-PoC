@@ -1,0 +1,58 @@
+name: Pulsar E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install client
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Start Pulsar
+        run: docker compose up -d
+
+      - name: Wait for Pulsar
+        shell: bash
+        run: |
+          for attempt in {1..36}; do
+            if curl --fail --silent http://localhost:8080/admin/v2/clusters >/dev/null; then
+              echo "Pulsar is ready"
+              exit 0
+            fi
+            echo "Waiting for Pulsar ($attempt/36)..."
+            sleep 5
+          done
+          echo "Pulsar did not become ready"
+          docker compose logs pulsar
+          exit 1
+
+      - name: Compile Python sources
+        run: python -m py_compile producer.py consumer.py smoke_test.py
+
+      - name: Run end-to-end smoke test
+        run: python smoke_test.py
+
+      - name: Pulsar logs on failure
+        if: failure()
+        run: docker compose logs pulsar
+
+      - name: Stop Pulsar
+        if: always()
+        run: docker compose down -v
