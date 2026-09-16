@@ -3,7 +3,8 @@ set -euo pipefail
 
 LOCATION="${LOCATION:-northeurope}"
 RESOURCE_GROUP="${RESOURCE_GROUP:-pulsar-eventhub-lab-rg}"
-SUFFIX="${LAB_SUFFIX:-$(printf '%06d' $((RANDOM % 1000000)))}"
+RAW_SUFFIX="${LAB_SUFFIX:-$RANDOM}"
+SUFFIX="$(printf '%06d' "$((10#${RAW_SUFFIX//[^0-9]/} % 1000000))")"
 ACR_NAME="${ACR_NAME:-pehlab${SUFFIX}}"
 SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID:-}"
 
