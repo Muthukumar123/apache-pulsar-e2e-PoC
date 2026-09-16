@@ -2,10 +2,13 @@ import json
 import os
 import time
 import uuid
+import urllib.error
+import urllib.request
 
 import pulsar
 
 SERVICE_URL = os.getenv("PULSAR_SERVICE_URL", "pulsar://localhost:6650")
+ADMIN_URL = os.getenv("PULSAR_ADMIN_URL", "http://localhost:8080")
 GOOD_EVENT_COUNT = int(os.getenv("E2E_GOOD_EVENT_COUNT", "3"))
 MAX_REDELIVERIES = 3
 NEGATIVE_ACK_DELAY_MS = 500
@@ -22,6 +25,40 @@ def event(event_type: str, sequence: int, run_id: str) -> dict:
     }
 
 
+def wait_for_default_namespace() -> None:
+    deadline = time.monotonic() + TIMEOUT_SECONDS
+    url = f"{ADMIN_URL}/admin/v2/namespaces/public"
+
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=3) as response:
+                namespaces = json.loads(response.read().decode("utf-8"))
+            if "public/default" in namespaces:
+                print("Pulsar namespace public/default is ready")
+                return
+        except (urllib.error.URLError, json.JSONDecodeError):
+            pass
+        time.sleep(1)
+
+    raise RuntimeError("Pulsar namespace public/default did not become ready")
+
+
+def create_topic(topic_name: str) -> None:
+    local_name = topic_name.rsplit("/", 1)[-1]
+    url = f"{ADMIN_URL}/admin/v2/persistent/public/default/{local_name}"
+    request = urllib.request.Request(url, method="PUT", data=b"")
+
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            response.read()
+        print(f"Created topic {topic_name}")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 409:
+            print(f"Topic already exists {topic_name}")
+            return
+        raise
+
+
 def main() -> None:
     run_id = uuid.uuid4().hex[:12]
     topic = f"persistent://public/default/poc-e2e-{run_id}"
@@ -32,13 +69,16 @@ def main() -> None:
     print(f"topic={topic}")
     print(f"dlq_topic={dlq_topic}")
 
+    wait_for_default_namespace()
+    create_topic(topic)
+    create_topic(dlq_topic)
+
     client = pulsar.Client(SERVICE_URL)
     main_consumer = None
     dlq_consumer = None
     producer = None
 
     try:
-        # Create the DLQ reader before publishing so the test observes the complete path.
         dlq_consumer = client.subscribe(
             dlq_topic,
             subscription_name=f"poc-e2e-dlq-reader-{run_id}",
