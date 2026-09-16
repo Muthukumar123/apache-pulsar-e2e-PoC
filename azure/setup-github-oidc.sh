@@ -2,9 +2,13 @@
 set -euo pipefail
 
 REPO="${GITHUB_REPOSITORY:-Muthukumar123/apache-pulsar-e2e-PoC}"
+REPO_OWNER="${REPO%%/*}"
+REPO_NAME="${REPO##*/}"
+REPO_OWNER_ID="${GITHUB_REPOSITORY_OWNER_ID:-3875126}"
+REPO_ID="${GITHUB_REPOSITORY_ID:-1372062775}"
 SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID:-$(az account show --query id -o tsv)}"
 TENANT_ID="${AZURE_TENANT_ID:-$(az account show --query tenantId -o tsv)}"
-APP_NAME="${AZURE_APP_NAME:-github-${REPO##*/}-deploy}"
+APP_NAME="${AZURE_APP_NAME:-github-${REPO_NAME}-deploy}"
 ROLE="${AZURE_ROLE:-Contributor}"
 
 command -v az >/dev/null || { echo "Azure CLI (az) is required"; exit 1; }
@@ -35,9 +39,28 @@ if ! az role assignment list --assignee-object-id "$SP_OBJECT_ID" --scope "$SCOP
 fi
 
 CREDENTIAL_NAME="github-actions-main"
-SUBJECT="repo:${REPO}:environment:azure-lab"
-EXISTING="$(az ad app federated-credential list --id "$APP_OBJECT_ID" --query "[?name=='${CREDENTIAL_NAME}'] | length(@)" -o tsv)"
-if [[ "$EXISTING" == "0" ]]; then
+SUBJECT="repo:${REPO_OWNER}@${REPO_OWNER_ID}/${REPO_NAME}@${REPO_ID}:environment:azure-lab"
+
+EXISTING_ID="$(az ad app federated-credential list \
+  --id "$APP_OBJECT_ID" \
+  --query "[?name=='${CREDENTIAL_NAME}'].id | [0]" \
+  -o tsv)"
+EXISTING_SUBJECT="$(az ad app federated-credential list \
+  --id "$APP_OBJECT_ID" \
+  --query "[?name=='${CREDENTIAL_NAME}'].subject | [0]" \
+  -o tsv)"
+
+if [[ -n "$EXISTING_ID" && "$EXISTING_SUBJECT" != "$SUBJECT" ]]; then
+  echo "Replacing old federated credential subject:"
+  echo "  old: $EXISTING_SUBJECT"
+  echo "  new: $SUBJECT"
+  az ad app federated-credential delete \
+    --id "$APP_OBJECT_ID" \
+    --federated-credential-id "$EXISTING_ID"
+  EXISTING_ID=""
+fi
+
+if [[ -z "$EXISTING_ID" ]]; then
   cat > /tmp/github-oidc.json <<EOF
 {
   "name": "${CREDENTIAL_NAME}",
@@ -54,14 +77,14 @@ cat <<EOF
 
 Azure OIDC trust is ready.
 
-Add these THREE GitHub repository secrets:
+Add/confirm these THREE GitHub repository secrets:
 
 AZURE_CLIENT_ID=${APP_ID}
 AZURE_TENANT_ID=${TENANT_ID}
 AZURE_SUBSCRIPTION_ID=${SUBSCRIPTION_ID}
 
 GitHub path:
-Settings -> Secrets and variables -> Actions -> New repository secret
+Settings -> Secrets and variables -> Actions
 
 Then run:
 Actions -> Deploy Azure Lab -> Run workflow
