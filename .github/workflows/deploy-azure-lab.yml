@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       location:
-        description: Azure region
+        description: Azure region for lab resources
         required: true
-        default: westeurope
+        default: northeurope
         type: string
       resource_group:
         description: Resource group name
@@ -43,7 +43,7 @@ jobs:
       - name: Show deployment target
         run: |
           az account show --query '{subscription:name, subscriptionId:id, tenantId:tenantId}' -o table
-          echo "Location: ${{ inputs.location }}"
+          echo "Lab resource location: ${{ inputs.location }}"
           echo "Resource group: ${{ inputs.resource_group }}"
 
       - name: Ensure Bicep is available
