@@ -147,6 +147,8 @@ resource pulsarBroker 'Microsoft.App/containerApps@2024-03-01' = {
           ]
           args: [
             'standalone'
+            '--advertised-address'
+            pulsarBrokerName
           ]
           env: [
             {
@@ -168,7 +170,7 @@ resource pulsarBroker 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
-var pulsarServiceUrl = 'pulsar://${pulsarBroker.properties.configuration.ingress.fqdn}:6650'
+var pulsarServiceUrl = 'pulsar://${pulsarBrokerName}:6650'
 var registryConfig = [
   {
     server: acr.properties.loginServer
