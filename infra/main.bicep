@@ -37,9 +37,10 @@ resource acr 'Microsoft.ContainerRegistry/registries@2025-11-01' existing = {
 var acrCredentials = acr.listCredentials()
 var acrPassword = acrCredentials.passwords[0].value
 
-resource env 'Microsoft.App/managedEnvironments@2025-07-01' = {
+resource env 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: containerAppsEnvironmentName
   location: location
+  properties: {}
 }
 
 resource eventHubNamespace 'Microsoft.EventHub/namespaces@2024-01-01' = {
@@ -116,7 +117,7 @@ resource checkpointContainer 'Microsoft.Storage/storageAccounts/blobServices/con
 var storageKey = storage.listKeys().keys[0].value
 var blobConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storage.name};AccountKey=${storageKey};EndpointSuffix=${environment().suffixes.storage}'
 
-resource pulsarBroker 'Microsoft.App/containerApps@2025-02-02-preview' = {
+resource pulsarBroker 'Microsoft.App/containerApps@2024-03-01' = {
   name: pulsarBrokerName
   location: location
   properties: {
@@ -182,7 +183,7 @@ var registrySecret = [
   }
 ]
 
-resource pulsarProducer 'Microsoft.App/containerApps@2025-02-02-preview' = {
+resource pulsarProducer 'Microsoft.App/containerApps@2024-03-01' = {
   name: pulsarProducerName
   location: location
   properties: {
@@ -233,7 +234,7 @@ resource pulsarProducer 'Microsoft.App/containerApps@2025-02-02-preview' = {
   }
 }
 
-resource pulsarConsumers 'Microsoft.App/containerApps@2025-02-02-preview' = [for (consumerName, i) in pulsarConsumerNames: {
+resource pulsarConsumers 'Microsoft.App/containerApps@2024-03-01' = [for (consumerName, i) in pulsarConsumerNames: {
   name: consumerName
   location: location
   properties: {
@@ -296,7 +297,7 @@ resource pulsarConsumers 'Microsoft.App/containerApps@2025-02-02-preview' = [for
   }
 }]
 
-resource eventHubProducer 'Microsoft.App/containerApps@2025-02-02-preview' = {
+resource eventHubProducer 'Microsoft.App/containerApps@2024-03-01' = {
   name: eventHubProducerName
   location: location
   properties: {
@@ -352,7 +353,7 @@ resource eventHubProducer 'Microsoft.App/containerApps@2025-02-02-preview' = {
   }
 }
 
-resource eventHubConsumers 'Microsoft.App/containerApps@2025-02-02-preview' = [for (consumerName, i) in eventHubConsumerNames: {
+resource eventHubConsumers 'Microsoft.App/containerApps@2024-03-01' = [for (consumerName, i) in eventHubConsumerNames: {
   name: consumerName
   location: location
   properties: {
