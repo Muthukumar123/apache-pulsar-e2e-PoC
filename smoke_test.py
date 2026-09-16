@@ -10,6 +10,7 @@ GOOD_EVENT_COUNT = int(os.getenv("E2E_GOOD_EVENT_COUNT", "3"))
 MAX_REDELIVERIES = 3
 NEGATIVE_ACK_DELAY_MS = 500
 TIMEOUT_SECONDS = int(os.getenv("E2E_TIMEOUT_SECONDS", "45"))
+SETUP_RETRY_INTERVAL_SECONDS = 1
 
 
 def event(event_type: str, sequence: int, run_id: str) -> dict:
@@ -20,6 +21,17 @@ def event(event_type: str, sequence: int, run_id: str) -> dict:
         "sequence": sequence,
         "payload": {"message": f"e2e-{event_type}-{sequence}"},
     }
+
+
+def retry_topic_operation(operation, *, resource: str, deadline: float):
+    while True:
+        try:
+            return operation()
+        except pulsar.TopicNotFound:
+            if time.monotonic() >= deadline:
+                raise
+            print(f"Waiting for Pulsar topic metadata: {resource}")
+            time.sleep(SETUP_RETRY_INTERVAL_SECONDS)
 
 
 def main() -> None:
@@ -36,29 +48,42 @@ def main() -> None:
     main_consumer = None
     dlq_consumer = None
     producer = None
+    setup_deadline = time.monotonic() + TIMEOUT_SECONDS
 
     try:
-        # Create the DLQ reader before publishing so the test observes the complete path.
-        dlq_consumer = client.subscribe(
-            dlq_topic,
-            subscription_name=f"poc-e2e-dlq-reader-{run_id}",
-            initial_position=pulsar.InitialPosition.Earliest,
-        )
-
-        main_consumer = client.subscribe(
-            topic,
-            subscription_name=subscription,
-            consumer_type=pulsar.ConsumerType.Shared,
-            initial_position=pulsar.InitialPosition.Earliest,
-            negative_ack_redelivery_delay_ms=NEGATIVE_ACK_DELAY_MS,
-            dead_letter_policy=pulsar.ConsumerDeadLetterPolicy(
-                max_redeliver_count=MAX_REDELIVERIES,
-                dead_letter_topic=dlq_topic,
-                initial_subscription_name=f"{subscription}-dlq-initial",
+        main_consumer = retry_topic_operation(
+            lambda: client.subscribe(
+                topic,
+                subscription_name=subscription,
+                consumer_type=pulsar.ConsumerType.Shared,
+                initial_position=pulsar.InitialPosition.Earliest,
+                negative_ack_redelivery_delay_ms=NEGATIVE_ACK_DELAY_MS,
+                dead_letter_policy=pulsar.ConsumerDeadLetterPolicy(
+                    max_redeliver_count=MAX_REDELIVERIES,
+                    dead_letter_topic=dlq_topic,
+                    initial_subscription_name=f"{subscription}-dlq-initial",
+                ),
             ),
+            resource=topic,
+            deadline=setup_deadline,
         )
 
-        producer = client.create_producer(topic)
+        producer = retry_topic_operation(
+            lambda: client.create_producer(topic),
+            resource=topic,
+            deadline=setup_deadline,
+        )
+
+        # Create the DLQ reader before publishing so the test observes the complete path.
+        dlq_consumer = retry_topic_operation(
+            lambda: client.subscribe(
+                dlq_topic,
+                subscription_name=f"poc-e2e-dlq-reader-{run_id}",
+                initial_position=pulsar.InitialPosition.Earliest,
+            ),
+            resource=dlq_topic,
+            deadline=setup_deadline,
+        )
 
         expected_good_ids = set()
         for sequence in range(1, GOOD_EVENT_COUNT + 1):
