@@ -61,7 +61,7 @@ jobs:
           AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           LOCATION: ${{ inputs.location }}
           RESOURCE_GROUP: ${{ inputs.resource_group }}
-          LAB_SUFFIX: ${{ github.run_number }}${{ github.run_attempt }}
+          LAB_SUFFIX: ${{ format('{0}{1}', github.run_number, github.run_attempt) }}
         run: |
           chmod +x azure/deploy-bicep.sh
           ./azure/deploy-bicep.sh | tee deployment-output.txt
