@@ -1,3 +1,5 @@
 pulsar-client==3.13.0
 fastapi==0.116.1
 uvicorn[standard]==0.35.0
+azure-eventhub>=5.15,<6
+azure-eventhub-checkpointstoreblob==1.2.0
