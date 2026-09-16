@@ -46,7 +46,12 @@ def wait_for_default_namespace() -> None:
 def create_topic(topic_name: str) -> None:
     local_name = topic_name.rsplit("/", 1)[-1]
     url = f"{ADMIN_URL}/admin/v2/persistent/public/default/{local_name}"
-    request = urllib.request.Request(url, method="PUT", data=b"")
+    request = urllib.request.Request(
+        url,
+        method="PUT",
+        data=b"{}",
+        headers={"Content-Type": "application/json"},
+    )
 
     try:
         with urllib.request.urlopen(request, timeout=5) as response:
