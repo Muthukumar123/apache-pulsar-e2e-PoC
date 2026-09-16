@@ -11,6 +11,12 @@ MAX_REDELIVERIES = 3
 NEGATIVE_ACK_DELAY_MS = 500
 TIMEOUT_SECONDS = int(os.getenv("E2E_TIMEOUT_SECONDS", "45"))
 SETUP_RETRY_INTERVAL_SECONDS = 1
+RETRYABLE_SETUP_ERRORS = (
+    pulsar.ConnectError,
+    pulsar.LookupError,
+    pulsar.Timeout,
+    pulsar.TopicNotFound,
+)
 
 
 def event(event_type: str, sequence: int, run_id: str) -> dict:
@@ -27,10 +33,10 @@ def retry_topic_operation(operation, *, resource: str, deadline: float):
     while True:
         try:
             return operation()
-        except pulsar.TopicNotFound:
+        except RETRYABLE_SETUP_ERRORS as exc:
             if time.monotonic() >= deadline:
                 raise
-            print(f"Waiting for Pulsar topic metadata: {resource}")
+            print(f"Waiting for Pulsar topic metadata: {resource} ({exc.__class__.__name__})")
             time.sleep(SETUP_RETRY_INTERVAL_SECONDS)
 
 
