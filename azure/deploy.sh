@@ -8,7 +8,9 @@ SUFFIX="${PULSAR_DEMO_SUFFIX:-$RANDOM}"
 ACR_NAME="${ACR_NAME:-pulsarpoc${SUFFIX}}"
 BROKER_APP="${BROKER_APP:-pulsar-broker}"
 PRODUCER_APP="${PRODUCER_APP:-pulsar-producer}"
-CONSUMER_APP="${CONSUMER_APP:-pulsar-consumer}"
+CONSUMER1_APP="${CONSUMER1_APP:-pulsar-consumer-1}"
+CONSUMER2_APP="${CONSUMER2_APP:-pulsar-consumer-2}"
+CONSUMER3_APP="${CONSUMER3_APP:-pulsar-consumer-3}"
 
 command -v az >/dev/null || { echo "Azure CLI (az) is required"; exit 1; }
 az account show >/dev/null 2>&1 || { echo "Run: az login"; exit 1; }
@@ -66,27 +68,45 @@ az containerapp create \
   --env-vars "PULSAR_SERVICE_URL=${PULSAR_URL}" 'PULSAR_TOPIC=persistent://public/default/demo-messages' \
   -o none
 
-printf '\nDeploying Consumer Dashboard...\n'
-az containerapp create \
-  --name "$CONSUMER_APP" \
-  --resource-group "$RESOURCE_GROUP" \
-  --environment "$ENVIRONMENT" \
-  --image "${REGISTRY_SERVER}/pulsar-consumer:latest" \
-  --registry-server "$REGISTRY_SERVER" \
-  --registry-username "$REGISTRY_USER" \
-  --registry-password "$REGISTRY_PASSWORD" \
-  --ingress external \
-  --target-port 8000 \
-  --min-replicas 1 \
-  --max-replicas 1 \
-  --env-vars "PULSAR_SERVICE_URL=${PULSAR_URL}" 'PULSAR_TOPIC=persistent://public/default/demo-messages' 'PULSAR_DLQ_TOPIC=persistent://public/default/demo-messages-dlq' 'PULSAR_SUBSCRIPTION=demo-consumers' \
-  -o none
+create_consumer() {
+  local app_name="$1"
+  local consumer_id="$2"
+  printf '\nDeploying %s...\n' "$consumer_id"
+  az containerapp create \
+    --name "$app_name" \
+    --resource-group "$RESOURCE_GROUP" \
+    --environment "$ENVIRONMENT" \
+    --image "${REGISTRY_SERVER}/pulsar-consumer:latest" \
+    --registry-server "$REGISTRY_SERVER" \
+    --registry-username "$REGISTRY_USER" \
+    --registry-password "$REGISTRY_PASSWORD" \
+    --ingress external \
+    --target-port 8000 \
+    --min-replicas 1 \
+    --max-replicas 1 \
+    --env-vars \
+      "PULSAR_SERVICE_URL=${PULSAR_URL}" \
+      'PULSAR_TOPIC=persistent://public/default/demo-messages' \
+      'PULSAR_DLQ_TOPIC=persistent://public/default/demo-messages-dlq' \
+      'PULSAR_SUBSCRIPTION=demo-consumers' \
+      'PULSAR_DLQ_SUBSCRIPTION=demo-consumers-dlq' \
+      "CONSUMER_ID=${consumer_id}" \
+    -o none
+}
+
+create_consumer "$CONSUMER1_APP" consumer-1
+create_consumer "$CONSUMER2_APP" consumer-2
+create_consumer "$CONSUMER3_APP" consumer-3
 
 PRODUCER_FQDN="$(az containerapp show -g "$RESOURCE_GROUP" -n "$PRODUCER_APP" --query properties.configuration.ingress.fqdn -o tsv)"
-CONSUMER_FQDN="$(az containerapp show -g "$RESOURCE_GROUP" -n "$CONSUMER_APP" --query properties.configuration.ingress.fqdn -o tsv)"
+CONSUMER1_FQDN="$(az containerapp show -g "$RESOURCE_GROUP" -n "$CONSUMER1_APP" --query properties.configuration.ingress.fqdn -o tsv)"
+CONSUMER2_FQDN="$(az containerapp show -g "$RESOURCE_GROUP" -n "$CONSUMER2_APP" --query properties.configuration.ingress.fqdn -o tsv)"
+CONSUMER3_FQDN="$(az containerapp show -g "$RESOURCE_GROUP" -n "$CONSUMER3_APP" --query properties.configuration.ingress.fqdn -o tsv)"
 
 printf '\nDeployment complete.\n'
-printf 'Producer UI:          https://%s\n' "$PRODUCER_FQDN"
-printf 'Consumer Dashboard:   https://%s\n' "$CONSUMER_FQDN"
-printf 'Pulsar internal URL:  %s\n' "$PULSAR_URL"
-printf '\nOpen both browser URLs side by side. Send a message in Producer and watch it appear in Consumer Dashboard.\n'
+printf 'Producer UI:        https://%s\n' "$PRODUCER_FQDN"
+printf 'Consumer 1:         https://%s\n' "$CONSUMER1_FQDN"
+printf 'Consumer 2:         https://%s\n' "$CONSUMER2_FQDN"
+printf 'Consumer 3:         https://%s\n' "$CONSUMER3_FQDN"
+printf 'Pulsar internal:    %s\n' "$PULSAR_URL"
+printf '\nOpen all four browser URLs. Send a batch (for example 30 messages) and watch Shared subscription distribute messages across consumer-1/2/3.\n'
