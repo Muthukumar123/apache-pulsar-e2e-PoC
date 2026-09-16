@@ -25,6 +25,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Validate Bicep syntax
+        run: |
+          az bicep install
+          az bicep build --file infra/bootstrap.bicep --stdout >/dev/null
+          az bicep build --file infra/main.bicep --stdout >/dev/null
+
       - name: Start Pulsar
         run: docker compose up -d pulsar
 
