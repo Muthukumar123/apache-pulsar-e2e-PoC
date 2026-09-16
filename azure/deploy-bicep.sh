@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LOCATION="${LOCATION:-westeurope}"
+LOCATION="${LOCATION:-northeurope}"
 RESOURCE_GROUP="${RESOURCE_GROUP:-pulsar-eventhub-lab-rg}"
 SUFFIX="${LAB_SUFFIX:-$(printf '%06d' $((RANDOM % 1000000)))}"
 ACR_NAME="${ACR_NAME:-pehlab${SUFFIX}}"
@@ -17,11 +17,18 @@ fi
 ACTIVE_SUBSCRIPTION="$(az account show --query id -o tsv)"
 ACTIVE_NAME="$(az account show --query name -o tsv)"
 
-echo "Azure subscription: $ACTIVE_NAME ($ACTIVE_SUBSCRIPTION)"
-echo "Location:           $LOCATION"
-echo "Resource group:     $RESOURCE_GROUP"
-echo "ACR:                $ACR_NAME"
-echo "Lab suffix:         $SUFFIX"
+if az group show --name "$RESOURCE_GROUP" >/dev/null 2>&1; then
+  RESOURCE_GROUP_LOCATION="$(az group show --name "$RESOURCE_GROUP" --query location -o tsv)"
+else
+  RESOURCE_GROUP_LOCATION="$LOCATION"
+fi
+
+echo "Azure subscription:     $ACTIVE_NAME ($ACTIVE_SUBSCRIPTION)"
+echo "Lab resource location:  $LOCATION"
+echo "Resource group:         $RESOURCE_GROUP"
+echo "Resource group location:$RESOURCE_GROUP_LOCATION"
+echo "ACR:                    $ACR_NAME"
+echo "Lab suffix:             $SUFFIX"
 
 az provider register --namespace Microsoft.App --wait >/dev/null
 az provider register --namespace Microsoft.EventHub --wait >/dev/null
@@ -31,9 +38,9 @@ az provider register --namespace Microsoft.ContainerRegistry --wait >/dev/null
 printf '\n[1/3] Bootstrapping resource group and ACR with Bicep...\n'
 az deployment sub create \
   --name "pulsar-eventhub-bootstrap-${SUFFIX}" \
-  --location "$LOCATION" \
+  --location "$RESOURCE_GROUP_LOCATION" \
   --template-file infra/bootstrap.bicep \
-  --parameters location="$LOCATION" resourceGroupName="$RESOURCE_GROUP" acrName="$ACR_NAME" \
+  --parameters resourceGroupLocation="$RESOURCE_GROUP_LOCATION" resourceLocation="$LOCATION" resourceGroupName="$RESOURCE_GROUP" acrName="$ACR_NAME" \
   --only-show-errors \
   -o none
 
@@ -48,7 +55,7 @@ az deployment group create \
   --name "pulsar-eventhub-lab-${SUFFIX}" \
   --resource-group "$RESOURCE_GROUP" \
   --template-file infra/main.bicep \
-  --parameters acrName="$ACR_NAME" suffix="$SUFFIX" \
+  --parameters location="$LOCATION" acrName="$ACR_NAME" suffix="$SUFFIX" \
   --only-show-errors \
   -o none
 
