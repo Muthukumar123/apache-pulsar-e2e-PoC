@@ -1,0 +1,82 @@
+name: Deploy Azure Lab
+
+on:
+  workflow_dispatch:
+    inputs:
+      location:
+        description: Azure region
+        required: true
+        default: westeurope
+        type: string
+      resource_group:
+        description: Resource group name
+        required: true
+        default: pulsar-eventhub-lab-rg
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: azure-lab-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Provision and deploy lab
+    runs-on: ubuntu-latest
+    environment: azure-lab
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to Azure with OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Show deployment target
+        run: |
+          az account show --query '{subscription:name, subscriptionId:id, tenantId:tenantId}' -o table
+          echo "Location: ${{ inputs.location }}"
+          echo "Resource group: ${{ inputs.resource_group }}"
+
+      - name: Ensure Bicep is available
+        run: |
+          az bicep install || az bicep upgrade
+          az bicep version
+
+      - name: Validate Bicep
+        run: |
+          az bicep build --file infra/bootstrap.bicep --stdout >/dev/null
+          az bicep build --file infra/main.bicep --stdout >/dev/null
+
+      - name: Deploy infrastructure and applications
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          LOCATION: ${{ inputs.location }}
+          RESOURCE_GROUP: ${{ inputs.resource_group }}
+          LAB_SUFFIX: ${{ github.run_number }}${{ github.run_attempt }}
+        run: |
+          chmod +x azure/deploy-bicep.sh
+          ./azure/deploy-bicep.sh | tee deployment-output.txt
+
+      - name: Publish deployment summary
+        if: always()
+        run: |
+          {
+            echo '## Azure Pulsar vs Event Hubs Lab'
+            echo
+            if [ -f deployment-output.txt ]; then
+              echo '```text'
+              tail -n 30 deployment-output.txt
+              echo '```'
+            else
+              echo 'Deployment did not reach the output stage. Open the failed step logs for details.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
