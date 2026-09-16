@@ -5,6 +5,7 @@ param location string = resourceGroup().location
 param acrName string
 
 @description('Suffix used to keep globally unique resource names.')
+@minLength(6)
 param suffix string
 
 param containerAppsEnvironmentName string = 'pulsar-eventhub-lab-env'
@@ -428,9 +429,9 @@ resource eventHubConsumers 'Microsoft.App/containerApps@2025-02-02-preview' = [f
 }]
 
 output pulsarProducerUrl string = 'https://${pulsarProducer.properties.configuration.ingress.fqdn}'
-output pulsarConsumerUrls array = [for app in pulsarConsumers: 'https://${app.properties.configuration.ingress.fqdn}']
+output pulsarConsumerUrls array = [for i in range(0, length(pulsarConsumerNames)): 'https://${pulsarConsumers[i].properties.configuration.ingress.fqdn}']
 output eventHubProducerUrl string = 'https://${eventHubProducer.properties.configuration.ingress.fqdn}'
-output eventHubConsumerUrls array = [for app in eventHubConsumers: 'https://${app.properties.configuration.ingress.fqdn}']
+output eventHubConsumerUrls array = [for i in range(0, length(eventHubConsumerNames)): 'https://${eventHubConsumers[i].properties.configuration.ingress.fqdn}']
 output eventHubNamespace string = eventHubNamespace.name
 output eventHubPartitions int = eventHubPartitionCount
 output resourceGroupName string = resourceGroup().name
