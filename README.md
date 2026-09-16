@@ -1,91 +1,160 @@
-# Apache Pulsar End-to-End PoC
+# Messaging Behavior Lab: Apache Pulsar vs Azure Event Hubs
 
-A runnable Apache Pulsar proof of concept with a browser-based producer, multiple consumer dashboards, Shared subscription load distribution, acknowledgements, negative acknowledgements, retry/redelivery, DLQ handling, Azure Container Apps deployment, and an automated smoke test.
+This repository is a visual PoC for understanding how Apache Pulsar and Azure Event Hubs scale consumers differently.
+
+It contains browser-based producers and consumer dashboards so you can send the same burst of messages into both systems and watch how work is distributed.
+
+## What you are learning
+
+### Pulsar Shared subscription
+
+```text
+Producer
+   |
+   v
+Pulsar topic
+   |
+   | subscription = demo-consumers
+   | type = Shared
+   |
+   +---- message 1 ---> consumer-1
+   +---- message 2 ---> consumer-2
+   +---- message 3 ---> consumer-3
+   +---- message 4 ---> consumer-1
+```
+
+All three consumers can be active on the same subscription. Pulsar dispatches individual messages among them. Shared subscriptions do not guarantee ordering.
+
+### Azure Event Hubs consumer group
+
+The comparison deployment deliberately creates **2 partitions and 3 consumers**:
+
+```text
+Event Hub: demo-events
+
+Partition 0 ----------> eventhub-consumer-1
+Partition 1 ----------> eventhub-consumer-2
+                         eventhub-consumer-3 -> no partition / idle
+
+consumer group = demo-consumers
+```
+
+Event Hubs distributes **partition ownership** across consumer instances. With two partitions, only two consumers can own work at steady state. The third consumer waits until a partition becomes available.
+
+The three Event Hubs consumers share one Azure Blob checkpoint store, which is how the Python `EventHubConsumerClient` coordinates load balancing and persisted checkpoints.
 
 ## Why no Dapr?
 
-Dapr is not required for this PoC. The goal is to demonstrate Apache Pulsar's native producer, subscription, acknowledgement, retry, and DLQ behavior directly. Adding Dapr pub/sub would insert another abstraction between the application and Pulsar and make it harder to see the Pulsar semantics we are testing.
+Dapr is intentionally not in the core path. The point of this lab is to expose native Pulsar and Event Hubs behavior. Dapr can be added later for service invocation, tracing, secrets, or a common pub/sub abstraction, but that would hide some of the differences this lab is designed to demonstrate.
 
-Dapr can be added later for service invocation, tracing, secrets, or a standardized application integration layer, but it is intentionally not part of the core messaging path here.
-
-## Shared subscription architecture
-
-```text
-                                   same subscription: demo-consumers
-
-+----------------+      +------------------+       +-------------------+
-| Producer UI    | ---> | Apache Pulsar    | ----> | Consumer 1        |
-| batch send     |      | demo-messages    |  \    | consumer-1        |
-+----------------+      +------------------+   +-> | Consumer 2        |
-                                              \   | consumer-2        |
-                                               +> | Consumer 3        |
-                                                  | consumer-3        |
-                                                  +-------------------+
-```
-
-All three consumers attach to the same topic with:
-
-```text
-subscription_name = demo-consumers
-subscription_type = Shared
-```
-
-Pulsar distributes individual messages among the active consumers. A given message goes to one consumer in the Shared subscription. Shared subscriptions do not provide ordering guarantees.
-
-## Local visual demo
-
-Start everything:
+## Experiment 1: Pulsar Shared subscription locally
 
 ```bash
 docker compose down -v
 docker compose up --build
 ```
 
-Open these four browser windows side by side:
+Open:
 
 | App | URL |
 |---|---|
-| Producer | http://localhost:8001 |
-| Consumer 1 | http://localhost:8002 |
-| Consumer 2 | http://localhost:8003 |
-| Consumer 3 | http://localhost:8004 |
+| Pulsar Producer | http://localhost:8001 |
+| Pulsar Consumer 1 | http://localhost:8002 |
+| Pulsar Consumer 2 | http://localhost:8003 |
+| Pulsar Consumer 3 | http://localhost:8004 |
 
-In Producer enter a message such as `shared-demo`, set **count = 30**, keep type `demo`, and click **Send**.
+Send a burst of 30 messages from the producer. Watch all three dashboards. You should see different messages appear on different consumers, even though all three use the same `demo-consumers` Shared subscription.
 
-Each generated message contains a sequence number. Watch the three dashboards: the messages will be split between `consumer-1`, `consumer-2`, and `consumer-3` because they all use the same `demo-consumers` Shared subscription.
+Send a `poison` message to see negative acknowledgement, redelivery, and DLQ behavior.
 
-To demonstrate retry and DLQ behavior, send one or more `poison` messages. Consumers negatively acknowledge poison messages; Pulsar redelivers them and moves them to the DLQ after the configured redelivery limit.
+## Experiment 2: Pulsar vs Azure Event Hubs in Azure
 
-## Azure visual demo
-
-The Azure deployment uses Azure Container Apps:
-
-```text
-Producer UI (external HTTPS)
-        |
-        v
-Pulsar broker (internal TCP 6650)
-        |
-        +------> Consumer 1 dashboard (external HTTPS)
-        +------> Consumer 2 dashboard (external HTTPS)
-        +------> Consumer 3 dashboard (external HTTPS)
-
-All consumers: PULSAR_SUBSCRIPTION=demo-consumers
-```
-
-Deploy:
+Deploy the complete comparison lab:
 
 ```bash
 az login
-chmod +x azure/deploy.sh
-./azure/deploy.sh
+chmod +x azure/deploy-comparison.sh
+./azure/deploy-comparison.sh
 ```
 
-The script prints four browser URLs: Producer, Consumer 1, Consumer 2, and Consumer 3. Open them side by side, send a batch from Producer, and observe the Shared subscription distribution visually.
+The script creates:
 
-## Automated E2E smoke test
+- Azure Container Apps environment
+- internal Apache Pulsar broker
+- Pulsar producer UI
+- three separate Pulsar consumer dashboards
+- Azure Event Hubs namespace
+- Event Hub `demo-events` with exactly 2 partitions
+- consumer group `demo-consumers`
+- Azure Storage checkpoint container
+- Event Hubs producer UI
+- three separate Event Hubs consumer dashboards
 
-The repository also retains the deterministic CLI smoke test:
+The script prints all eight browser URLs when deployment is complete.
+
+## How to run the comparison
+
+### Step A — Pulsar
+
+Open the Pulsar Producer and all three Pulsar consumer dashboards.
+
+Send 30 messages.
+
+Observe:
+
+```text
+consumer-1 -> some messages
+consumer-2 -> some messages
+consumer-3 -> some messages
+```
+
+The important observation is not a perfect 10/10/10 split. The important observation is that all three consumers can actively participate in one Shared subscription.
+
+### Step B — Event Hubs
+
+Open the Event Hubs Producer and all three Event Hubs consumer dashboards.
+
+Wait for partition balancing, then look at the **Owned partitions** card on every consumer.
+
+With 2 partitions and 3 consumers, you should see something like:
+
+```text
+eventhub-consumer-1 -> partition 0
+eventhub-consumer-2 -> partition 1
+eventhub-consumer-3 -> none
+```
+
+The exact consumer-to-partition assignment can change, but there can only be two active partition owners because the Event Hub has two partitions.
+
+Send 30 messages.
+
+Each consumer dashboard shows:
+
+- message text
+- partition ID
+- sequence number
+- event ID
+- receive timestamp
+
+This makes the partition model visible instead of hidden in application logs.
+
+## The architectural difference to remember
+
+| Question | Apache Pulsar Shared | Azure Event Hubs |
+|---|---|---|
+| What is distributed? | Individual messages | Partitions |
+| Scaling unit | Consumer on a subscription | Partition ownership |
+| 3 consumers, 1 non-partitioned topic | All 3 can process | Not an Event Hubs model |
+| 3 consumers, 2 Event Hubs partitions | N/A | 2 active owners, 1 idle |
+| Failure handling | ACK/NACK, redelivery, DLQ policies | Offset/checkpoint based processing |
+| Ordering | Shared: no ordering guarantee | Ordered within a partition |
+| Independent readers | Separate Pulsar subscriptions | Separate Event Hubs consumer groups |
+
+## Pulsar Key_Shared follow-up
+
+Pulsar also supports `Key_Shared`. With that mode, consumers still share a subscription, but messages with the same key stay on one consumer in order. That is a useful next experiment after Shared.
+
+## Automated Pulsar smoke test
 
 ```bash
 python3.10 -m venv .venv
@@ -94,37 +163,31 @@ pip install -r requirements.txt
 python smoke_test.py
 ```
 
-Expected final output:
+Expected output:
 
 ```text
 E2E PASS: produced, consumed, retried and dead-lettered successfully
 ```
 
-## Versions
-
-- Apache Pulsar broker: `4.2.4`
-- Pulsar Python client: `3.13.0`
-- Python: `3.10`
-- FastAPI/Uvicorn for the demo web apps
-
 ## Repository layout
 
 ```text
 .
-├── .github/workflows/e2e.yml
-├── azure/deploy.sh
+├── producer_app.py                  # Pulsar producer UI
+├── consumer_app.py                  # Pulsar consumer dashboard
+├── eventhub_producer_app.py         # Event Hubs producer UI
+├── eventhub_consumer_app.py         # Event Hubs partition ownership dashboard
 ├── Dockerfile.producer
 ├── Dockerfile.consumer
-├── docker-compose.yml
-├── producer_app.py
-├── consumer_app.py
-├── producer.py
-├── consumer.py
+├── Dockerfile.eventhub-producer
+├── Dockerfile.eventhub-consumer
+├── docker-compose.yml               # Local Pulsar visual demo
+├── azure/deploy.sh                  # Pulsar-only Azure demo
+├── azure/deploy-comparison.sh       # Pulsar vs Event Hubs lab
 ├── smoke_test.py
-├── requirements.txt
-└── README.md
+└── .github/workflows/e2e.yml
 ```
 
-## Production considerations
+## Production note
 
-This repository intentionally uses a standalone broker and no authentication so the messaging semantics are easy to inspect. A production design should use an appropriately sized Pulsar cluster, durable storage/metadata, TLS and authentication/authorization, explicit tenant/namespace policies, observability, schema governance, capacity/SLO testing, and disaster recovery/geo-replication where required.
+This is deliberately a learning PoC. The Azure deployment uses connection strings to keep the example easy to understand; production workloads should prefer managed identity/RBAC where practical, private networking, managed secrets, observability, appropriate retention/capacity settings, and production-grade Pulsar topology/storage if Pulsar is selected.
