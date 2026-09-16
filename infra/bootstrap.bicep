@@ -14,19 +14,15 @@ resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   location: location
 }
 
-resource acr 'Microsoft.ContainerRegistry/registries@2025-11-01' = {
+module acrModule './acr.bicep' = {
+  name: 'acr-${acrName}'
   scope: rg
-  name: acrName
-  location: location
-  sku: {
-    name: 'Basic'
-  }
-  properties: {
-    adminUserEnabled: true
-    publicNetworkAccess: 'Enabled'
+  params: {
+    location: location
+    acrName: acrName
   }
 }
 
 output resourceGroupName string = rg.name
-output acrName string = acr.name
-output acrLoginServer string = acr.properties.loginServer
+output acrName string = acrModule.outputs.acrName
+output acrLoginServer string = acrModule.outputs.acrLoginServer
