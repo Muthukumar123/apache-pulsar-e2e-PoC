@@ -28,18 +28,19 @@ jobs:
       - name: Start Pulsar
         run: docker compose up -d
 
-      - name: Wait for Pulsar
+      - name: Wait for Pulsar namespace
         shell: bash
         run: |
           for attempt in {1..36}; do
-            if curl --fail --silent http://localhost:8080/admin/v2/clusters >/dev/null; then
-              echo "Pulsar is ready"
+            namespaces="$(curl --fail --silent http://localhost:8080/admin/v2/namespaces/public || true)"
+            if echo "$namespaces" | grep -q 'public/default'; then
+              echo "Pulsar public/default namespace is ready"
               exit 0
             fi
-            echo "Waiting for Pulsar ($attempt/36)..."
+            echo "Waiting for Pulsar namespace ($attempt/36)..."
             sleep 5
           done
-          echo "Pulsar did not become ready"
+          echo "Pulsar namespace did not become ready"
           docker compose logs pulsar
           exit 1
 
