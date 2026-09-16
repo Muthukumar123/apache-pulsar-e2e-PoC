@@ -20,6 +20,7 @@ producer = None
 class MessageRequest(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
     message_type: str = Field(default="demo", min_length=1, max_length=100)
+    count: int = Field(default=1, ge=1, le=100)
 
 
 def get_producer():
@@ -53,10 +54,10 @@ def index():
 <html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
 <title>Pulsar Producer</title>
 <style>
-body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#0b1020;color:#eef2ff}main{max-width:760px;margin:48px auto;padding:24px}.card{background:#151b2f;border:1px solid #28314f;border-radius:16px;padding:24px}.row{display:flex;gap:12px;flex-wrap:wrap}input,select,button{font:inherit;border-radius:10px;border:1px solid #3a456c;padding:12px}input{flex:1;min-width:240px;background:#0f1528;color:#fff}select{background:#0f1528;color:#fff}button{background:#4f7cff;color:#fff;border:0;font-weight:700;cursor:pointer}.status{margin-top:16px;padding:12px;border-radius:10px;background:#0f1528;white-space:pre-wrap}.muted{color:#a8b1cc}
-</style></head><body><main><div class='card'><h1>Apache Pulsar Producer</h1><p class='muted'>Send a message into Pulsar and watch it appear in the consumer dashboard.</p><form id='form'><div class='row'><input id='message' placeholder='Type a message...' required><select id='type'><option value='demo'>demo</option><option value='poison'>poison</option></select><button>Send</button></div></form><div id='status' class='status'>Ready</div></div></main><script>
+body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#0b1020;color:#eef2ff}main{max-width:860px;margin:48px auto;padding:24px}.card{background:#151b2f;border:1px solid #28314f;border-radius:16px;padding:24px}.row{display:flex;gap:12px;flex-wrap:wrap}input,select,button{font:inherit;border-radius:10px;border:1px solid #3a456c;padding:12px}input{background:#0f1528;color:#fff}#message{flex:1;min-width:260px}#count{width:90px}select{background:#0f1528;color:#fff}button{background:#4f7cff;color:#fff;border:0;font-weight:700;cursor:pointer}.status{margin-top:16px;padding:12px;border-radius:10px;background:#0f1528;white-space:pre-wrap}.muted{color:#a8b1cc}
+</style></head><body><main><div class='card'><h1>Apache Pulsar Producer</h1><p class='muted'>Send one message, or a batch, and watch Shared subscription consumers split the work.</p><form id='form'><div class='row'><input id='message' placeholder='Type a message...' required><input id='count' type='number' min='1' max='100' value='1' title='Number of messages'><select id='type'><option value='demo'>demo</option><option value='poison'>poison</option></select><button>Send</button></div></form><div id='status' class='status'>Ready</div></div></main><script>
 const form=document.getElementById('form'), status=document.getElementById('status');
-form.addEventListener('submit',async(e)=>{e.preventDefault();status.textContent='Sending...';const r=await fetch('/api/messages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({message:document.getElementById('message').value,message_type:document.getElementById('type').value})});const data=await r.json();status.textContent=JSON.stringify(data,null,2);if(r.ok)document.getElementById('message').value='';});
+form.addEventListener('submit',async(e)=>{e.preventDefault();status.textContent='Sending...';const body={message:document.getElementById('message').value,message_type:document.getElementById('type').value,count:Number(document.getElementById('count').value)};const r=await fetch('/api/messages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});const data=await r.json();status.textContent=JSON.stringify(data,null,2);if(r.ok&&body.count===1)document.getElementById('message').value='';});
 </script></body></html>
 """
 
@@ -64,19 +65,20 @@ form.addEventListener('submit',async(e)=>{e.preventDefault();status.textContent=
 @app.post("/api/messages")
 def send_message(request: MessageRequest):
     try:
-        envelope = {
-            "event_id": str(uuid.uuid4()),
-            "type": request.message_type,
-            "message": request.message,
-            "sent_at": datetime.now(timezone.utc).isoformat(),
-        }
-        message_id = get_producer().send(json.dumps(envelope).encode("utf-8"))
-        return {
-            "status": "sent",
-            "event": envelope,
-            "pulsar_message_id": str(message_id),
-            "topic": TOPIC,
-        }
+        p = get_producer()
+        sent = []
+        for sequence in range(1, request.count + 1):
+            envelope = {
+                "event_id": str(uuid.uuid4()),
+                "type": request.message_type,
+                "message": request.message if request.count == 1 else f"{request.message} #{sequence}",
+                "sequence": sequence,
+                "batch_size": request.count,
+                "sent_at": datetime.now(timezone.utc).isoformat(),
+            }
+            message_id = p.send(json.dumps(envelope).encode("utf-8"))
+            sent.append({"event_id": envelope["event_id"], "sequence": sequence, "pulsar_message_id": str(message_id)})
+        return {"status": "sent", "count": request.count, "messages": sent, "topic": TOPIC}
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
