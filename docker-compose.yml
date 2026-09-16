@@ -27,17 +27,45 @@ services:
       pulsar:
         condition: service_healthy
 
-  consumer:
+  consumer-1:
     build:
       context: .
       dockerfile: Dockerfile.consumer
-    environment:
+    environment: &consumer-env
       PULSAR_SERVICE_URL: pulsar://pulsar:6650
       PULSAR_TOPIC: persistent://public/default/demo-messages
       PULSAR_DLQ_TOPIC: persistent://public/default/demo-messages-dlq
       PULSAR_SUBSCRIPTION: demo-consumers
+      PULSAR_DLQ_SUBSCRIPTION: demo-consumers-dlq
+      CONSUMER_ID: consumer-1
     ports:
       - "8002:8000"
+    depends_on:
+      pulsar:
+        condition: service_healthy
+
+  consumer-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.consumer
+    environment:
+      <<: *consumer-env
+      CONSUMER_ID: consumer-2
+    ports:
+      - "8003:8000"
+    depends_on:
+      pulsar:
+        condition: service_healthy
+
+  consumer-3:
+    build:
+      context: .
+      dockerfile: Dockerfile.consumer
+    environment:
+      <<: *consumer-env
+      CONSUMER_ID: consumer-3
+    ports:
+      - "8004:8000"
     depends_on:
       pulsar:
         condition: service_healthy
