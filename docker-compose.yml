@@ -8,8 +8,36 @@ services:
     environment:
       PULSAR_MEM: "-Xms512m -Xmx512m -XX:MaxDirectMemorySize=512m"
     healthcheck:
-      test: ["CMD-SHELL", "bin/pulsar-admin clusters list >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "bin/pulsar-admin namespaces list public | grep -q public/default"]
       interval: 5s
       timeout: 10s
-      retries: 24
+      retries: 36
       start_period: 20s
+
+  producer:
+    build:
+      context: .
+      dockerfile: Dockerfile.producer
+    environment:
+      PULSAR_SERVICE_URL: pulsar://pulsar:6650
+      PULSAR_TOPIC: persistent://public/default/demo-messages
+    ports:
+      - "8001:8000"
+    depends_on:
+      pulsar:
+        condition: service_healthy
+
+  consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile.consumer
+    environment:
+      PULSAR_SERVICE_URL: pulsar://pulsar:6650
+      PULSAR_TOPIC: persistent://public/default/demo-messages
+      PULSAR_DLQ_TOPIC: persistent://public/default/demo-messages-dlq
+      PULSAR_SUBSCRIPTION: demo-consumers
+    ports:
+      - "8002:8000"
+    depends_on:
+      pulsar:
+        condition: service_healthy
