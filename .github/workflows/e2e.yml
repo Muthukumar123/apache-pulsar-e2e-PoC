@@ -26,7 +26,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Start Pulsar
-        run: docker compose up -d
+        run: docker compose up -d pulsar
 
       - name: Wait for Pulsar namespace
         shell: bash
@@ -45,7 +45,7 @@ jobs:
           exit 1
 
       - name: Compile Python sources
-        run: python -m py_compile producer.py consumer.py smoke_test.py
+        run: python -m py_compile producer.py consumer.py producer_app.py consumer_app.py smoke_test.py
 
       - name: Run end-to-end smoke test
         run: python smoke_test.py
