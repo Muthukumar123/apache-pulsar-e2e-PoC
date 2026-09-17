@@ -60,6 +60,16 @@ az deployment group create \
   --only-show-errors \
   -o none
 
+printf '\nTuning Pulsar broker resources for standalone mode...\n'
+az containerapp update \
+  --name pulsar-broker \
+  --resource-group "$RESOURCE_GROUP" \
+  --cpu 2.0 \
+  --memory 4.0Gi \
+  --set-env-vars 'PULSAR_MEM=-Xms512m -Xmx1024m -XX:MaxDirectMemorySize=1024m' \
+  --only-show-errors \
+  -o none
+
 OUTPUTS="$(az deployment group show \
   --resource-group "$RESOURCE_GROUP" \
   --name "pulsar-eventhub-lab-${SUFFIX}" \
