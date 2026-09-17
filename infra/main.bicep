@@ -149,16 +149,18 @@ resource pulsarBroker 'Microsoft.App/containerApps@2024-03-01' = {
             'standalone'
             '--advertised-address'
             pulsarBrokerName
+            '--no-functions-worker'
+            '--no-stream-storage'
           ]
           env: [
             {
               name: 'PULSAR_MEM'
-              value: '-Xms512m -Xmx512m -XX:MaxDirectMemorySize=512m'
+              value: '-Xms1024m -Xmx1024m -XX:MaxDirectMemorySize=1024m'
             }
           ]
           resources: {
-            cpu: json('1.0')
-            memory: '2Gi'
+            cpu: json('2.0')
+            memory: '4Gi'
           }
         }
       ]
